@@ -1,5 +1,5 @@
 [package]
-name = "treesitter-bon"
+name = "rust-arity-scan"
 version = "0.1.0"
 edition = "2024"
 
