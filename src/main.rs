@@ -1,6 +1,7 @@
 use std::env;
 use std::fs;
 use std::path::Path;
+use std::path::PathBuf;
 use tree_sitter::StreamingIterator;
 use tree_sitter::{Parser, Query, QueryCursor};
 use walkdir::WalkDir;
@@ -51,14 +52,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
     println!("--------------------------------------------------");
 
-    for entry in WalkDir::new(directory)
+    let directory = PathBuf::from(directory);
+    for entry in WalkDir::new(&directory)
         .follow_links(true)
         .into_iter()
         .filter_map(|e| e.ok())
         .filter(|e| e.path().extension().map_or(false, |ext| ext == "rs"))
     {
         let path = entry.path();
-        let file_count = process_file(&path, &mut parser, &query, min_args)?;
+        let file_count = process_file(&directory, &path, &mut parser, &query, min_args)?;
         total_count += file_count;
     }
 
@@ -72,6 +74,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 fn process_file(
+    base: &Path,
     path: &Path,
     parser: &mut Parser,
     query: &Query,
@@ -104,19 +107,17 @@ fn process_file(
             let name_str = &source_code[name.node.byte_range()];
             let params_node = params.node;
 
-            // Count parameters by looking at children of parameters node
-            // Skip self parameter for methods
-            let is_method = m.captures.iter().any(|c| c.index == method_name_idx);
-            let mut arg_count = count_parameters(&params_node, is_method);
+            let arg_count = count_parameters(&params_node);
 
+            let path = path.strip_prefix(base).unwrap();
             if arg_count > min_args {
                 let line = params_node.start_position().row + 1;
                 println!(
-                    "{}:{}: {} - {} arguments",
-                    path.display(),
+                    "{} args\t{:4}| fn {}\t{}",
+                    arg_count,
                     line,
                     name_str,
-                    arg_count
+                    path.display(),
                 );
                 count += 1;
             }
@@ -126,7 +127,7 @@ fn process_file(
     Ok(count)
 }
 
-fn count_parameters(params_node: &tree_sitter::Node, is_method: bool) -> usize {
+fn count_parameters(params_node: &tree_sitter::Node) -> usize {
     let mut count = 0;
     let mut cursor = params_node.walk();
 
